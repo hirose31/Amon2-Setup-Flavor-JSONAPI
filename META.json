@@ -1,5 +1,5 @@
 {
-   "abstract" : "Amon2-Setup-Flavor-JSONAPI",
+   "abstract" : "Amon2 flavor for JSON API",
    "author" : [
       "HIROSE Masaaki <hirose31@gmail.com>"
    ],
@@ -73,9 +73,6 @@
       }
    },
    "version" : "v1.0.0",
-   "x_contributors" : [
-      "HIROSE Masaaki <hirose31@gmail.com>"
-   ],
    "x_serialization_backend" : "JSON::XS version 3.02"
 }
 

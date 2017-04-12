@@ -5,6 +5,58 @@ use utf8;
 package Amon2::Setup::Flavor::JSONAPI;
 use parent qw(Amon2::Setup::Flavor::Basic);
 
+=pod
+
+=encoding utf8
+
+=head1 NAME
+
+Amon2::Setup::Flavor::JSONAPI - Amon2 flavor for JSON API
+
+=begin readme
+
+=head1 INSTALLATION
+
+To install this module, run the following commands:
+
+    perl Build.PL
+    ./Build
+    ./Build test
+    ./Build install
+
+=end readme
+
+=head1 SYNOPSIS
+
+    amon2-setup --flavor JSONAPI MyAPI
+
+=head1 DESCRIPTION
+
+Amon2::Setup::Flavor::JSONAPI is Amon2 flavor for JSON API.
+
+=head1 AUTHOR
+
+HIROSE Masaaki E<lt>hirose31@gmail.comE<gt>
+
+=head1 REPOSITORY
+
+L<https://github.com/hirose31/Amon2-Setup-Flavor-JSONAPI>
+
+    git clone https://github.com/hirose31/Amon2-Setup-Flavor-JSONAPI.git
+
+patches and collaborators are welcome.
+
+=head1 COPYRIGHT
+
+Copyright HIROSE Masaaki
+
+=head1 LICENSE
+
+This library is free software; you can redistribute it and/or modify
+it under the same terms as Perl itself.
+
+=cut
+
 sub run {
     my ($self) = @_;
 
@@ -527,9 +579,6 @@ __END__
 
 This is a main context class for <% $module %>
 
-=head1 AUTHOR
-
-<% $module %> authors.
 ...
 
 
@@ -3305,56 +3354,6 @@ env PLACK_ENV=development \
 1;
 
 __END__
-
-=encoding utf8
-
-=head1 NAME
-
-Amon2::Setup::Flavor::JSONAPI - Amon2 flavor for JSON API
-
-=begin readme
-
-=head1 INSTALLATION
-
-To install this module, run the following commands:
-
-    perl Build.PL
-    ./Build
-    ./Build test
-    ./Build install
-
-=end readme
-
-=head1 SYNOPSIS
-
-    amon2-setup --flavor JSONAPI MyAPI
-
-=head1 DESCRIPTION
-
-Amon2::Setup::Flavor::JSONAPI is Amon2 flavor for JSON API.
-
-=head1 AUTHOR
-
-HIROSE Masaaki E<lt>hirose31@gmail.comE<gt>
-
-=head1 REPOSITORY
-
-L<https://github.com/hirose31/Amon2-Setup-Flavor-JSONAPI>
-
-    git clone https://github.com/hirose31/Amon2-Setup-Flavor-JSONAPI.git
-
-patches and collaborators are welcome.
-
-=head1 COPYRIGHT
-
-Copyright HIROSE Masaaki
-
-=head1 LICENSE
-
-This library is free software; you can redistribute it and/or modify
-it under the same terms as Perl itself.
-
-=cut
 
 # for Emacsen
 # Local Variables:
