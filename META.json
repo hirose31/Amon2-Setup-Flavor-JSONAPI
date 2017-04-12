@@ -1,7 +1,7 @@
 {
-   "abstract" : "fixme",
+   "abstract" : "<% $module %>",
    "author" : [
-      "HIROSE Masaaki <hirose31@gmail.com>"
+      "<% $module %> authors."
    ],
    "dynamic_config" : 0,
    "generated_by" : "Dist::Milla version v1.0.17, Dist::Zilla version 6.009, CPAN::Meta::Converter version 2.143240",
@@ -57,11 +57,25 @@
    "provides" : {
       "Amon2::Setup::Flavor::JSONAPI" : {
          "file" : "lib/Amon2/Setup/Flavor/JSONAPI.pm",
-         "version" : "0.001"
+         "version" : "v1.0.0"
       }
    },
    "release_status" : "stable",
-   "version" : "0.001",
+   "resources" : {
+      "bugtracker" : {
+         "web" : "https://github.com/hirose31/Amon2-Setup-Flavor-JSONAPI/issues"
+      },
+      "homepage" : "https://github.com/hirose31/Amon2-Setup-Flavor-JSONAPI",
+      "repository" : {
+         "type" : "git",
+         "url" : "https://github.com/hirose31/Amon2-Setup-Flavor-JSONAPI.git",
+         "web" : "https://github.com/hirose31/Amon2-Setup-Flavor-JSONAPI"
+      }
+   },
+   "version" : "v1.0.0",
+   "x_contributors" : [
+      "HIROSE Masaaki <hirose31@gmail.com>"
+   ],
    "x_serialization_backend" : "JSON::XS version 3.02"
 }
 
