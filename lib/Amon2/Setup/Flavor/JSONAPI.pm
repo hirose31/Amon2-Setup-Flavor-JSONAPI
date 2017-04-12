@@ -3,70 +3,374 @@ use warnings;
 use utf8;
 
 package Amon2::Setup::Flavor::JSONAPI;
-use parent qw(Amon2::Setup::Flavor);
+use parent qw(Amon2::Setup::Flavor::Basic);
 
 sub run {
     my ($self) = @_;
 
+    $self->SUPER::run();
+
     require Amon2;
 
-    $self->create_cpanfile({
-        'Log::Minimal' => 0,
-        'Path::Class' => 0,
-        'Class::Accessor::Lite' => 0,
-        'Redis' => 0,
-        'Redis::Key' => 0,
-        'Redis::Namespace' => 0,
-        'Data::Validator' => 0,
-        'Data::Validator::Recursive' => 0,
-        'IPC::Cmd' => 0,
-        'IPC::Run' => 0,
-        'Sub::Retry' => 0,
-        'Try::Tiny' => 0,
-        'Parallel::Prefork' => 0,
-        'DBI' => 0,
-        'DBIx::QueryLog' => 0,
-        'DBD::mysql' => 0,
-        'Daiku' => 0,
-    });
+    my $tmpl_val = {
+    };
+    # パスのテンプレでも使うので
+    $self->{distlc} = lc($self->{dist});
 
+    {
+        # create_cpanfile
+        my $cpanfile = Module::CPANfile->from_prereqs(
+            {
+                runtime => {
+                    requires => {
+                        'perl'              => '5.010_001',
+                        'Amon2'             => $Amon2::VERSION,
+                        'Text::Xslate'      => '2.0009',
+                        'Starlet'           => '0.20',
+                        'Module::Functions' => 2,
 
-    $self->write_file('API.md', <<'...');
-# API Specification
+                        'Log::Minimal'               => 0,
+                        'Path::Class'                => 0,
+                        'Class::Accessor::Lite'      => 0,
+                        'Redis'                      => 0,
+                        'Redis::Key'                 => 0,
+                        'Redis::Namespace'           => 0,
+                        'Data::Validator'            => 0,
+                        'Data::Validator::Recursive' => 0,
+                        'IPC::Cmd'                   => 0,
+                        'IPC::Run'                   => 0,
+                        'Sub::Retry'                 => 0,
+                        'Try::Tiny'                  => 0,
+                        'Parallel::Prefork'          => 0,
+                        'DBI'                        => 0,
+                        'DBIx::QueryLog'             => 0,
+                        'DBD::mysql'                 => 0,
+                        'Daiku'                      => 0,
+                        'WWW::Form::UrlEncoded::XS'  => 0,
+                    },
+                },
+                configure => {
+                    requires => {
+                        'Module::Build'    => '0.38',
+                        'Module::CPANfile' => '0.9020',
+                    },
+                },
+                test => {
+                    requires => {
+                        'Test::More' => '0.98',
+
+                        'Test::mysqld'                => 0,
+                        'Harriet'                     => 0,
+                        'Test::Pretty'                => 0,
+                        'DBIx::FixtureLoader'         => 0,
+                        'App::Prove::Plugin::Harriet' => 0,
+                        'FindBin'                     => 0,
+                    },
+                },
+            }
+        );
+        $self->write_file('cpanfile', $cpanfile->to_string());
+    }
+
+    $self->write_file('API.md', <<'...', $tmpl_val);
+# <% $dist %> API Reference
+
+please generate by `daiku api`
+...
+
+    $self->write_file('Daikufile', <<'...', $tmpl_val);
+# -*- mode: perl -*-
+
+desc 'run test';
+task test => sub {
+    my ($task, @args) = @_;
+    sh qw(carton exec -- prove -r t), @args;
+};
+
+desc 'run test with -v option';
+task testv => sub {
+    my ($task, @args) = @_;
+    sh qw(carton exec -- prove -rv t), @args;
+};
+
+desc 'dump schema';
+task dump_schema => sub {
+    require <% $module %>::API::CLI::DumpSchema;
+    <% $module %>::CLI::DumpSchema->run;
+};
+
+desc 'dump data';
+task dump_data => sub {
+    require <% $module %>::API::CLI::DumpData;
+    <% $module %>::CLI::DumpData->run;
+};
+
+desc 'release next version';
+task release => sub {
+    require <% $module %>::API::CLI::Release;
+    <% $module %>::CLI::Release->run;
+};
+
+desc 'generate API.md';
+task 'api' => 'API.md';
+file 'API.md' => 'schema/schema.json' => sub {
+    my $file = shift;
+    sh sprintf('prmd doc --settings schema/config.yml -o %s %s', $file->dst, $file->deps->[0]);
+};
+
+desc 'combine JSON schema';
+task 'combine' => 'schema/schema.json';
+file 'schema/schema.json' => 'schema/meta.yml' => sub {
+    my $file = shift;
+    sh sprintf('prmd combine --meta schema/meta.yml -o %s schema/schemata/', $file->dst);
+};
+...
+
+    $self->write_file('README.md', <<'...', $tmpl_val);
+# <% $dist %> API
 
 <!-- fixme M-x markdown-toc-generate-toc -->
 
-## 共通仕様
+## API Document
 
-## User
+- [API Reference](API.md)
 
-### Attributes
-
-| Name | Type | Description | Example |
-| ------- | ------- | ------- | ------- |
-| **id** | *integer* | ユーザーID | `31` |
-| **name** | *string* | ユーザー名 | `"hirose31"` |
-
-### User Info
-
-ユーザー情報を返す
+## Installation
 
 ```
-GET /user/{USER_NAME}
+cpanm Carton
+cd <% $dist %>/
+carton install
+carton exec -- plackup -I lib -R lib --access-log /dev/null -p 5000 ./script/<% $distlc %>-api-server
 ```
 
-#### Response Example
+## Operation
+
+### APIドキュメントを更新する
 
 ```
-HTTP/1.1 200 OK
+vi schema/schemata/xxx.yml
+
+daiku api
 ```
 
-```json
-{
-  "id": 31,
-  "name": "hirose31"
-}
+### モジュール追加したとき
+
 ```
+vi cpanfile
+carton install
+```
+
+### DBのスキーマを変更したい
+
+```
+carton exec -- harriet t/harriet &
+
+export TEST_MYSQL='DBI:mysql:...'
+mysql -uroot -S ... -D test
+# スキーマを変更する
+
+daiku dump_schema
+```
+
+### テストを実行する
+
+```
+daiku test
+もしくは
+daiku testv
+```
+
+### リリース
+
+```
+daiku release
+git push
+git push --tags
+```
+
+### デプロイ
+
+`fixme` のホストそれぞれについて実行する。
+
+```
+### fixme
+cd ~fixme/repos/<% $dist %>/
+git pull
+sudo svc -h /service/<% $distlc %>-api
+# バージョンアップした場合はこれで確認できる。
+# プロセスが生まれ変わるまで数秒かかるので何度か実行して確認する。
+curl http://127.0.0.1:5010/status
+```
+
+## 環境変数
+
+### `PLACK_ENV`
+
+ロードする設定ファイルの決定に使われる。 (`config/$PLACK_ENV.pl`)
+
+本番、開発環境では `INFRA_ENV` と同じ値がセットされる。[service/<% $distlc %>-api/run](service/<% $distlc %>-api/run)
+
+開発時は `development` か、自分の好きなのをセットすればよい。
+
+省略時は `development` になる。
+
+`test` はテストに使っているので使わないでください。
+
+### `RUN_MODE`
+
+動作モードの決定に使われる。
+
+`development` とセットされた場合、以下のようになる。
+
+- `DBIx::QueryLog` を有効にする
+- Log::Minimalのログレベルを debug にする (`$ENV{LM_DEBUG} = 1;`)
+
+開発時は `development` にするとよい。
+
+## DB
+
+### 初期データ
+
+`prove`や`harriet t/harriet`を実行した際に`t/harriet/mysqld.pl`が実行される。
+
+`t/harriet/mysqld.pl`は、ファイル`tmp/test_mysql_copy_data_from/initialized`が存在しない場合、`tmp/test_mysql_copy_data_from/` の下に初期データを用意して、ファイル`tmp/test_mysql_copy_data_from/initialized`をtouchする。
+
+ファイル`tmp/test_mysql_copy_data_from/initialized` が存在する場合は、それをコピーしてコピーしたものを参照するmysqldを起動する。つまり、コピー元の`tmp/test_mysql_copy_data_from/`は更新されずきれいなまま。
+
+### 開発中で、テスト用のmysqldを上げっぱなしにしたいとき
+
+```
+carton exec -- harriet t/harriet
+```
+
+`export TEST_MYSQL='DBI:mysql:...'` と表示されるので、テストを実行したいターミナルでコピペする。
+
+
+...
+
+    $self->write_file('.gitignore', <<'...', $tmpl_val);
+Makefile
+/inc/
+MANIFEST
+*.bak
+*.old
+nytprof.out
+nytprof/
+*.db
+/blib/
+pm_to_blib
+META.json
+META.yml
+MYMETA.json
+MYMETA.yml
+/Build
+/_build/
+/local/
+/.carton/
+
+/var/
+/data/
+/tmp/
+
+/service/*/supervise
+/service/*/log/supervise
+/service/*/log/main/
+/service/*/env/*
+!/service/*/env/.gitkeep
+/service/*/*/env/*
+!/service/*/*/env/.gitkeep
+...
+
+    $self->write_file('.proverc', <<'...', $tmpl_val);
+--exec "env PLACK_ENV=test perl -Ilib -MTest::Pretty -MTest::Name::FromLine"
+-PPretty
+-PHarriet=./t/harriet
+--timer
+--merge
+--trap
+--color
+--failures
+-w
+...
+
+    $self->write_file('config/development.pl', <<'...', $tmpl_val);
+use Path::Class;
+
+my $root_dir = file(__FILE__)->parent->parent->resolve;
+my $data_dir = $root_dir->subdir('var');
+
+my $dbuser     = q{root};
+my $dbpass     = q{};
+my $dbhost     = q{127.0.0.1};
+my $dbdatabase = q{test};
+
++{
+    'data_dir' => $data_dir->stringify,
+    'maintenance_file' => '/tmp/maintenance',
+    'allow_from' => sub { 1 },
+    'DBI' => [
+        "dbi:mysql:database=$dbdatabase;host=$dbhost",
+        $dbuser,
+        $dbpass,
+        {
+            AutoCommit           => 1,
+            PrintError           => 0,
+            RaiseError           => 1,
+            ShowErrorStatement   => 1,
+            AutoInactiveDestroy  => 1,
+            mysql_auto_reconnect => 0,
+            mysql_enable_utf8    => 1,
+            Callbacks => {
+                connected => sub {
+                    $_[0]->do('SET NAMES utf8');
+                    return;
+                },
+            },
+        },
+    ],
+    'redis' => {
+        server => 'redis.my.local:6379',
+    },
+};
+...
+
+    $self->write_file('config/test.pl', <<'...', $tmpl_val);
+use Path::Class;
+
+my $data_dir = Path::Class::tempdir(CLEANUP => 1);
+
+my $dbuser     = q{root};
+my $dbpass     = q{};
+
++{
+    'data_dir' => $data_dir->stringify,
+    'maintenance_file' => '/tmp/maintenance',
+    'allow_from' => sub { 1 },
+    'DBI' => [
+        undef,
+        $dbuser,
+        $dbpass,
+        {
+            AutoCommit           => 1,
+            PrintError           => 0,
+            RaiseError           => 1,
+            ShowErrorStatement   => 1,
+            AutoInactiveDestroy  => 1,
+            mysql_auto_reconnect => 0,
+            mysql_enable_utf8    => 1,
+            Callbacks => {
+                connected => sub {
+                    $_[0]->do('SET NAMES utf8');
+                    return;
+                },
+            },
+        },
+    ],
+    'redis' => {
+        server => 'redis.my.local:6379',
+    },
+};
 ...
 
     $self->write_file('config/myprod.pl', <<'...');
@@ -111,6 +415,7 @@ my $dbdatabase = q{database};
 };
 ...
 
+
     $self->write_file('lib/<<PATH>>.pm', <<'...');
 package <% $module %>;
 
@@ -125,6 +430,8 @@ use Amon2::Config::Simple;
 use Log::Minimal;
 use Path::Class;
 
+use <% $module %>::DB::Schema;
+use <% $module %>::DB;
 use <% $module %>::Redis;
 use <% $module %>::Util;
 
@@ -136,6 +443,8 @@ __PACKAGE__->load_plugins(
     '+<% $module %>::Plugin::Model',
     '+<% $module %>::Plugin::DataValidator',
 );
+
+my $schema = <% $module %>::DB::Schema->instance;
 
 if ($ENV{RUN_MODE} && $ENV{RUN_MODE} eq 'development') {
     eval q!
@@ -156,6 +465,12 @@ sub load_config {
         environment => $c->mode_name || 'development',
     });
 
+    if ($ENV{TEST_MYSQL}) {
+        # connect to Test::mysqld instance
+        $config->{DBI}[0] = $ENV{TEST_MYSQL};
+    }
+    infof 'dsn: %s', $config->{DBI}[0] // '';
+
     if ($ENV{TEST_REDIS}) {
         # connect to Test::RedisServer
         $config->{redis} = {
@@ -168,6 +483,23 @@ sub load_config {
     dir($config->{data_dir})->mkpath(0, oct(2775));
 
     return $config;
+}
+
+sub db {
+    my $c = shift;
+    if (!exists $c->{db}) {
+        my $conf = $c->config->{DBI}
+            or die "Missing configuration about DBI";
+        $c->{db} = <% $module %>::DB->new(
+            schema       => $schema,
+            connect_info => [@$conf],
+            # I suggest to enable following lines if you are using mysql.
+            # on_connect_do => [
+            #     'SET SESSION sql_mode=STRICT_TRANS_TABLES;',
+            # ],
+        );
+    }
+    $c->{db};
 }
 
 sub redis {
@@ -246,7 +578,7 @@ __PACKAGE__->add_trigger(
         my($c) = @_;
 
         my $ua = $c->req->user_agent;
-        debugf 'ua: %s', $ua;
+        debugf 'ua: %s', $ua // '';
 
         ### 特定の UA の場合はここで処理できる。
         ### 古いバージョンのだったらエラーを返すとか。
@@ -368,6 +700,148 @@ sub show_error {
 1;
 ...
 
+    $self->write_file('lib/<<PATH>>/API/CLI/DumpData.pm', <<'...', $tmpl_val);
+package <% $module %>::CLI::DumpData;
+
+use strict;
+use warnings;
+use 5.010_000;
+use utf8;
+
+use YAML;
+use Path::Class;
+
+use <% $module %>;
+use <% $module %>::Util;
+
+my @tables = qw(users);
+if ($ENV{DUMP_TABLE}) {
+    @tables = split /\s+/, $ENV{DUMP_TABLE};
+}
+
+sub run {
+    my $c = <% $module %>->bootstrap();
+    my $dbh = $c->db->dbh;
+
+    for my $table (@tables) {
+        print "$table\n";
+        my $res = $dbh->selectall_arrayref("select * from $table", +{ Slice => +{} });
+        dir('data')->file($table.'.yaml')->spew(iomode => '>:encoding(UTF-8)', YAML::Dump($res));
+    }
+}
+
+1;
+
+__END__
+
+=encoding utf8
+
+=head1 NAME
+
+B<<% $module %>::CLI::DumpData>
+
+=head1 DESCRIPTION
+
+Mainly used by C<daiku dump_data>.
+
+=cut
+...
+
+    $self->write_file('lib/<<PATH>>/API/CLI/DumpSchema.pm', <<'...', $tmpl_val);
+package <% $module %>::CLI::DumpSchema;
+
+use strict;
+use warnings;
+use 5.010_000;
+use utf8;
+
+use DBI;
+use Path::Class;
+use Teng::Schema::Dumper;
+use Test::mysqld;
+
+my %json_bool = (
+    inflate => <<'EOSUB',
+sub {
+    my $v = shift;
+    return $v ? \1 : \0;
+};
+EOSUB
+    deflate => <<'EOSUB',
+sub {
+    my $v = shift;
+    return $v ? 1 : 0;
+};
+EOSUB
+);
+
+sub run {
+    my $mysqld = Test::mysqld->new(my_cnf => { 'skip-networking' => '' })
+        or die $Test::mysqld::errstr;
+    my $dbh = DBI->connect($mysqld->dsn);
+
+    my $file_name = 'sql/ddl.sql';
+    my $source    = file($file_name)->slurp;
+
+    for my $stmt (split /;/, $source) {
+        next unless $stmt =~ /\S/;
+        $dbh->do($stmt) or die $dbh->errstr;
+    }
+
+    my $schema_class = 'lib/<% $path %>/DB/Schema.pm';
+    my @modules = qw(
+                        Carp
+                );
+    my $use_modules = '';
+    $use_modules = 'use '.join(";\nuse ", @modules).";\n" if @modules;
+    open my $fh, '>', $schema_class or die "$schema_class \: $!";
+    my $content = Teng::Schema::Dumper->dump(
+        dbh => $dbh,
+        namespace      => '<% $module %>::DB',
+        base_row_class => '<% $module %>::DB::Row',
+        inflate        => {
+            assets => q|
+    for my $c (qw(evaluation_flg)) {
+        inflate $c => |.$json_bool{inflate}.q|
+        deflate $c => |.$json_bool{deflate}.q|
+    }
+|,
+            hosts => q|
+    inflate 'exception' => |.$json_bool{inflate}.q|
+    deflate 'exception' => sub {
+        my $v = shift;
+        return $v ? 'exception' : undef;
+    };
+
+    for my $c (qw(monitor_ignore_flg dr_switch_daemon_flg)) {
+        inflate $c => |.$json_bool{inflate}.q|
+        deflate $c => |.$json_bool{deflate}.q|
+    }
+|,
+        },
+    );
+    $content =~ s{(use warnings;)}{$1\n$use_modules};
+    print $fh $content;
+    close $fh;
+}
+
+1;
+
+__END__
+
+=encoding utf8
+
+=head1 NAME
+
+B<<% $module %>::CLI::DumpSchema>
+
+=head1 DESCRIPTION
+
+Mainly used by C<daiku dump_schema>.
+
+=cut
+...
+
     $self->write_file('lib/<<PATH>>/API/CLI/Release.pm', <<'...');
 package <% $module %>::CLI::Release;
 
@@ -430,6 +904,580 @@ B<<% $module %>::CLI::Release>
 Mainly used by C<daiku release>.
 
 =cut
+...
+
+    $self->write_file('lib/<<PATH>>/API/Dispatcher.pm', <<'...', $tmpl_val);
+package <% $module %>::API::Dispatcher;
+
+use strict;
+use warnings;
+use 5.010_000;
+use utf8;
+
+use Carp;
+use Log::Minimal;
+use JSON 2 qw(encode_json decode_json);
+use Try::Tiny;
+use HTTP::Status;
+
+use Amon2::Web::Dispatcher::RouterBoom;
+
+use <% $module %>;
+use <% $module %>::Util;
+
+any '/' => sub {
+    my ($c) = @_;
+    my $counter = $c->session->get('counter') || 0;
+    $counter++;
+    $c->session->set('counter' => $counter);
+    return $c->render('index.tx', {
+        counter => $counter,
+    });
+};
+
+{
+    no warnings 'redefine';
+    package
+        HTTP::Status;
+    *status_message_orig = \&status_message;
+    *status_message = sub ($) {
+        +{
+            599 => 'Under Maintenance',
+        }->{$_[0]} || status_message_orig($_[0]);
+    }
+}
+
+get '/_chk' => sub {
+    my $c = shift;
+
+    my($status, $body);
+
+    if ($c->config->{maintenance_file} && -e $c->config->{maintenance_file}) {
+        $status = 599;
+        $body   = 'MAINTAIN';
+    } else {
+        $status = 200;
+        $body   = 'OK';
+    }
+
+    return $c->create_response(
+        $status,
+        [
+            'Content-Type'   => 'text/plain',
+            'Content-Length' => length($body)
+        ],
+        $body,
+    );
+};
+
+get '/status' => sub {
+    my $c = shift;
+
+    my $body = "";
+
+    $body .= sprintf "<% $module %>-API/%s\n", $<% $module %>::VERSION;
+
+    return $c->create_response(
+        200,
+        [
+            'Content-Type'   => 'text/plain',
+            'Content-Length' => length($body)
+        ],
+        $body,
+    );
+};
+
+############################################################################
+
+# capability
+get '/v1/capability' => sub {
+    my($c, $args) = @_;
+
+    # <% $module %>::APIのBEFORE_DISPATCHでやった方がいいかなぁ
+    # でも将来的に v1 は 1.0 以上、v2 は 2.0 以上、とか API version に
+    # よって変えたくなるかもだしここでやる。
+
+    my $require_version = '1.0';
+    my $content = {
+        message => 'OK',
+    };
+
+    my $ua = $c->req->user_agent;
+    if ($ua =~ m{\A<% $module %>/([0-9]+\.[0-9]+)\z}) {
+        my $client_version = $1;
+        debugf 'its <% $module %> client v%s', $client_version;
+        if ($client_version < $require_version) {
+            $content->{message} = sprintf 'client version must be %s or later', $require_version;
+        }
+    } else {
+        $content->{message} = 'not looks like <% $dist %> client program';
+    }
+
+    return $c->render_json($content);
+};
+
+### users ##################################################################
+get '/v1/search/users' => sub {
+    my($c, $args) = @_;
+
+    my $param = $c->parse_json_qs_request
+        or return $c->show_bad_request(
+            'failed to parse JSON' => [{code => 'invalid'}],
+        );
+
+    my $mres = $c->model('User')->search($param);
+
+    return $mres->has_errors
+        ? $c->show_bad_request('validation failed', $mres->errors)
+        : $c->render_json($mres->content);
+};
+
+get '/v1/users/:user_name' => sub {
+    my($c, $args) = @_;
+
+    my $param = $c->parse_json_qs_request
+        or return $c->show_bad_request(
+            'failed to parse JSON' => [{code => 'invalid'}],
+        );
+
+    my $mres = $c->model('User')->fetch({
+        name => $args->{user_name},
+    });
+
+    return $mres->has_errors
+        ? $c->show_bad_request('validation failed', $mres->errors)
+        : scalar(@{ $mres->content }) != 1
+          ? $c->show_internal_server_error('got several results')
+          : $c->render_json($mres->content->[0]);
+};
+
+post '/v1/users' => sub {
+    my($c, $args) = @_;
+
+    my $param = $c->parse_json_request
+        or return $c->show_bad_request(
+            'failed to parse JSON' => [{code => 'invalid'}],
+        );
+
+    my $mres = $c->model('User')->insert($param);
+
+    return $mres->has_errors
+        ? $c->show_bad_request('validation failed', $mres->errors)
+        : $c->render_json($mres->content, 201);
+};
+
+put '/v1/users/:user_name' => sub {
+    my($c, $args) = @_;
+
+    my $param = $c->parse_json_request
+        or return $c->show_bad_request(
+            'failed to parse JSON' => [{code => 'invalid'}],
+        );
+
+    my $mres = $c->model('User')->update({
+        %$param,
+        key => $args->{user_name},
+    });
+
+    return $mres->has_errors
+        ? $c->show_bad_request('validation failed', $mres->errors)
+        : $c->render_json($mres->content);
+};
+
+delete_ '/v1/users/:user_name' => sub {
+    my($c, $args) = @_;
+
+    my $mres = $c->model('User')->delete({ name => $args->{user_name} });
+
+    return $mres->has_errors
+        ? $c->show_bad_request('validation failed', $mres->errors)
+        : $mres->content == 0
+          ? $c->render_json({}, 404)
+          : $c->render_json({}, 204);
+};
+
+1;
+...
+
+    $self->write_file('lib/<<PATH>>/API/View.pm', <<'...');
+package <% $module %>::API::View;
+use strict;
+use warnings;
+use utf8;
+use Carp ();
+use File::Spec ();
+
+use File::ShareDir;
+use Text::Xslate 1.6001;
+use <% $module %>::API::ViewFunctions;
+
+# setup view class
+sub make_instance {
+    my ($class, $context) = @_;
+    Carp::croak("Usage: <% $module %>::API::View->make_instance(\$context_class)") if @_!=2;
+
+    my $view_conf = $context->config->{'Text::Xslate'} || +{};
+    unless (exists $view_conf->{path}) {
+        my $tmpl_path = File::Spec->catdir($context->base_dir(), 'tmpl');
+        if ( -d $tmpl_path ) {
+            # tmpl
+            $view_conf->{path} = [ $tmpl_path ];
+        } else {
+            my $share_tmpl_path = eval { File::Spec->catdir(File::ShareDir::dist_dir('<% $dist %>'), 'tmpl') };
+            if ($share_tmpl_path) {
+                # This application was installed to system.
+                $view_conf->{path} = [ $share_tmpl_path ];
+            } else {
+                Carp::croak("Can't find template directory. tmpl Is not available.");
+            }
+        }
+    }
+    my $view = Text::Xslate->new(+{
+        'syntax'   => 'Kolon',
+        'module'   => [
+            'Text::Xslate::Bridge::Star',
+            '<% $module %>::API::ViewFunctions',
+        ],
+        'function' => {
+        },
+        ($context->debug_mode ? ( warn_handler => sub {
+            Text::Xslate->print( # print method escape html automatically
+                '[[', @_, ']]',
+            );
+        } ) : () ),
+        %$view_conf
+    });
+    return $view;
+}
+
+1;
+...
+
+    $self->write_file('lib/<<PATH>>/API/ViewFunctions.pm', <<'...');
+package <% $module %>::API::ViewFunctions;
+use strict;
+use warnings;
+use utf8;
+use parent qw(Exporter);
+use Module::Functions;
+use File::Spec;
+
+our @EXPORT = get_public_functions();
+
+sub commify {
+    local $_  = shift;
+    1 while s/((?:\A|[^.0-9])[-+]?\d+)(\d{3})/$1,$2/s;
+    return $_;
+}
+
+sub c { <% $module %>->context() }
+sub uri_with { <% $module %>->context()->req->uri_with(@_) }
+sub uri_for { <% $module %>->context()->uri_for(@_) }
+
+{
+    my %static_file_cache;
+    sub static_file {
+        my $fname = shift;
+        my $c = <% $module %>->context;
+        if (not exists $static_file_cache{$fname}) {
+            my $fullpath = File::Spec->catfile($c->base_dir(), $fname);
+            $static_file_cache{$fname} = (stat $fullpath)[9];
+        }
+        return $c->uri_for(
+            $fname, {
+                't' => $static_file_cache{$fname} || 0
+            }
+        );
+    }
+}
+
+1;
+...
+
+    $self->write_file('lib/<<PATH>>/DB/Schema.pm', <<'...', $tmpl_val);
+package <% $module %>::DB::Schema;
+use strict;
+use warnings;
+use Carp;
+
+use Teng::Schema::Declare;
+base_row_class '<% $module %>::DB::Row';
+table {
+    name 'users';
+    pk 'id';
+    columns (
+        {name => 'id', type => 4},
+        {name => 'name', type => 12},
+    );
+};
+
+1;
+...
+
+    $self->write_file('lib/<<PATH>>/Model/User.pm', <<'...', $tmpl_val);
+package <% $module %>::Model::User;
+
+use strict;
+use warnings;
+use 5.010_000;
+use utf8;
+
+use Log::Minimal;
+use Try::Tiny;
+
+use <% $module %>::ModelResponse;
+use <% $module %>::ModelTypeConstraints;
+use <% $module %>::Util;
+
+use Class::Accessor::Lite (
+    new => 0,
+    ro  => [qw(c)]
+);
+
+sub new {
+    my($class, %args) = @_;
+    return bless \%args, $class;
+}
+
+sub search {
+    my($self, $param) = @_;
+
+    my $mres = <% $module %>::ModelResponse->new;
+
+    my $rule = $self->c->validator(
+        q => { isa => 'QueryConditions' },
+    )->with('NoThrow');
+
+    $param = $rule->validate(%$param);
+
+    if ($rule->has_errors) {
+        $mres->add_validator_errors($rule->clear_errors);
+        return $mres;
+    }
+
+    my $conds = $param->{q};
+
+    my $rule_q = $self->c->validator(
+        id   => { isa => 'Int|ArrayRef[Int]', optional => 1 },
+        name => { isa => 'Str|ArrayRef[Str]', optional => 1 },
+    )->with('NoThrow','NoRestricted');
+    for my $cond (@$conds) {
+        $cond = $rule_q->validate(%$cond);
+        if ($rule_q->has_errors) {
+            $mres->add_validator_errors($rule_q->clear_errors);
+        }
+    }
+
+    if ($mres->has_errors) {
+        return $mres;
+    }
+
+    my @result;
+    $conds = [{}] unless @$conds; # select all data
+    for my $cond (@$conds) {
+        my $iter = try {
+            $self->c->db->search('users', $cond);
+        } catch {
+            $mres->add_error({
+                field   => 'users',
+                code    => 'missing',
+                message => 'failed to search users: '.$_,
+            });
+            return;
+        };
+        unless ($iter) {
+            return $mres;
+        }
+
+        $iter->suppress_object_creation(1);
+        while (my $user = $iter->next) {
+            push @result, $user;
+        }
+    }
+
+    $mres->content(\@result);
+
+    return $mres;
+}
+
+sub fetch {
+    my($self, $param) = @_;
+
+    my $mres = <% $module %>::ModelResponse->new;
+
+    my $rule = $self->c->validator(
+        id   => { isa => 'Int', xor => [qw(name)] },
+        name => { isa => 'Str', xor => [qw(id)] },
+    )->with('NoThrow');
+
+    $param = $rule->validate(%$param);
+
+    if ($rule->has_errors) {
+        $mres->add_validator_errors($rule->clear_errors);
+        return $mres;
+    }
+
+    if (exists $param->{id}) {
+        $mres = $self->search({ q => [{ id => $param->{id} }] });
+    } else {
+        $mres = $self->search({ q => [{ name => $param->{name} }] });
+    }
+
+    return $mres;
+}
+
+sub insert {
+    my($self, $param) = @_;
+
+    my $mres = <% $module %>::ModelResponse->new;
+
+    my $rule = $self->c->validator(
+        name => { isa => 'Str' },
+    )->with('NoThrow','NoRestricted');
+
+    $param = $rule->validate(%$param);
+
+    if ($rule->has_errors) {
+        $mres->add_validator_errors($rule->clear_errors);
+        return $mres;
+    }
+
+    # idempotence
+    $mres = $self->search({ q => [$param] });
+    if ($mres->has_errors) {
+        $mres->add_error({
+            message => "failed to get user info",
+            field   => 'users',
+            code    => 'invalid',
+        });
+        return $mres;
+    }
+    if (scalar(@{ $mres->content }) > 0) {
+        debugf("user %s already exists", $mres->content->[0]{name});
+        $mres->content($mres->content->[0]);
+        return $mres;
+    }
+
+    my $id = try {
+        $self->c->db->fast_insert('users', $param)
+    } catch {
+        $mres->add_error({
+            field   => 'users',
+            code    => 'missing',
+            message => 'failed to insert user: '.$_,
+        });
+        return;
+    };
+    unless ($id) {
+        return $mres;
+    }
+
+    $mres = $self->fetch({name => $param->{name}});
+    unless ($mres->has_errors) {
+        $mres->content( $mres->content->[0] );
+    }
+
+    return $mres;
+}
+
+sub update {
+    my($self, $param) = @_;
+
+    my $mres = <% $module %>::ModelResponse->new;
+    my $rule = $self->c->validator(
+        key  => { isa => 'Str' },
+
+        name => { isa => 'Str', optional =>1 },
+    )->with('NoThrow');
+
+    $param = $rule->validate(%$param);
+
+    if ($rule->has_errors) {
+        $mres->add_validator_errors($rule->clear_errors);
+        return $mres;
+    }
+
+    my %newval = %{ $param };
+    my $key_val = delete $newval{key};
+
+    ### begin transaction
+    my $tx = $self->c->db->txn_scope;
+
+    my $row = $self->c->db->single('users', { name => $key_val });
+    unless ($row) {
+        $mres->add_error({
+            message => "no such user: name: $key_val",
+            field   => 'users',
+            code    => 'missing',
+        });
+        return $mres;
+    }
+
+    my $count = try {
+        $row->update(\%newval);
+    } catch {
+        $mres->add_error({
+            message => "failed to update user: ".$_,
+            field   => 'users',
+            code    => 'invalid',
+        });
+        return;
+    };
+    unless (defined $count) {
+        return $mres;
+    }
+
+    $mres = $self->search({
+        q => [{ id => $row->get_column('id') }],
+    });
+
+    ### commit transaction
+    $tx->commit;
+
+    $mres->content( $mres->content->[0] );
+
+    return $mres;
+}
+
+sub delete {
+    my($self, $param) = @_;
+
+    my $mres = <% $module %>::ModelResponse->new;
+
+    my $rule = $self->c->validator(
+        name => { isa => 'Str' },
+    )->with('NoThrow');
+
+    $param = $rule->validate(%$param);
+
+    if ($rule->has_errors) {
+        $mres->add_validator_errors($rule->clear_errors);
+        return $mres;
+    }
+
+    my $count = $self->c->db->delete('users', $param);
+
+    $mres->content($count);
+
+    return $mres;
+}
+
+1;
+
+__END__
+
+# for Emacsen
+# Local Variables:
+# mode: cperl
+# cperl-indent-level: 4
+# cperl-close-paren-offset: -4
+# cperl-indent-parens-as-block: t
+# indent-tabs-mode: nil
+# coding: utf-8
+# End:
+
+# vi: set ts=4 sw=4 sts=0 et ft=perl fenc=utf-8 ff=unix :
+
 ...
 
     $self->write_file('lib/<<PATH>>/ModelResponse.pm', <<'...');
@@ -709,6 +1757,8 @@ use strict;
 use warnings;
 use Try::Tiny;
 use Class::Load qw/load_class/;
+
+use <% $module %>::Util;
 
 our $VERSION = '0.05';
 
@@ -1141,6 +2191,110 @@ This module manages session for <% $module %>.
 
 ...
 
+    $self->write_file('lib/<<PATH>>/Redis.pm', <<'...', $tmpl_val);
+package <% $module %>::Redis;
+
+use strict;
+use warnings;
+use 5.010_000;
+use utf8;
+
+use Log::Minimal;
+use Redis;
+use Redis::Namespace;
+use Redis::Key;
+
+use <% $module %>::Util;
+
+use Class::Accessor::Lite (
+    new => 0,
+    ro  => [qw(task status queue resource lock_launch)],
+    rw  => [qw()],
+);
+
+sub new {
+    my($class, $conf) = @_;
+
+    my $redis = Redis->new(%$conf)
+        or croakf 'failed to create Redis instance: %s', ddf($conf);
+
+    my $self = bless {
+        redis => $redis,
+    }, $class;
+
+    my $run_env = $ENV{PLACK_ENV} // 'localtest';
+    for my $kind (qw(task status resource lock_launch)) {
+        my $namespace = join ':', $run_env, '<% $distlc %>', $kind;
+        my $ns = Redis::Namespace->new(
+            redis     => $redis,
+            namespace => $namespace,
+        )
+            or croakf 'failed to create Redis::Namespace: %s', $namespace;
+        $self->{$kind} = $ns;
+    }
+    {
+        my $namespace = join ':', $run_env, '<% $distlc %>';
+        my $ns = Redis::Namespace->new(
+            redis     => $redis,
+            namespace => $namespace
+        )
+            or croakf 'failed to create Redis::Namespace: %s', $namespace;
+        $self->{queue} = $ns;
+    }
+
+    return $self;
+}
+
+sub key {
+    my($self, $kind, $param) = @_;
+
+    my $key;
+    if ($kind eq 'queue') {
+        $key = 'queue';
+    } elsif ($kind eq 'lock_launch') {
+        croakf 'missing argument: hostname' unless $param->{hostname};
+        $key = join ':', 'lock_launch', $param->{hostname};
+    } else {
+        my $ref = ref($param);
+        if (!$ref) {
+            $key = $param;
+        } elsif ($ref eq 'HASH') {
+            my @ke;
+            for my $ke (qw(service hostname type)) {
+                if ($param->{$ke}) {
+                    push @ke, $param->{$ke};
+                } else {
+                    croakf 'missing argument: %s', $ke;
+                }
+            }
+            $key = join ':', @ke;
+        } else {
+            croakf 'invalid argument: %s', ddf($param);
+        }
+    }
+
+    debugf 'key: %s', $key;
+    return Redis::Key->new(redis => $self->{$kind}, key => $key);
+}
+
+1;
+
+__END__
+
+# for Emacsen
+# Local Variables:
+# mode: cperl
+# cperl-indent-level: 4
+# cperl-close-paren-offset: -4
+# cperl-indent-parens-as-block: t
+# indent-tabs-mode: nil
+# coding: utf-8
+# End:
+
+# vi: set ts=4 sw=4 sts=0 et ft=perl fenc=utf-8 ff=unix :
+...
+
+
     $self->write_file('lib/<<PATH>>/Util.pm', <<'...');
 package <% $module %>::Util;
 
@@ -1195,444 +2349,957 @@ sub mask_credential {
 1;
 ...
 
-    $self->write_file('lib/<<PATH>>/API/Dispatcher.pm', <<'...');
-package <% $module %>::API::Dispatcher;
+    $self->write_file('schema/config.yml', <<'...', $tmpl_val);
+doc:
+  toc: true
+...
+
+    $self->write_file('schema/meta.yml', <<'...', $tmpl_val);
+---
+id: meta
+title: <% $dist %> API
+description: <% $dist %> API
+links:
+  - href: https://fixme.example.com/v1
+    rel: self
+  - method: GET
+    href: "/"
+    rel: self
+...
+
+    $self->write_file('schema/schema.json', <<'...', $tmpl_val);
+{
+  "$schema": "http://interagent.github.io/interagent-hyper-schema",
+  "type": [
+    "object"
+  ],
+  "definitions": {
+    "user": {
+      "$schema": "http://json-schema.org/draft-04/hyper-schema",
+      "title": "User",
+      "description": "ユーザー操作",
+      "stability": "prototype",
+      "strictProperties": true,
+      "type": [
+        "object"
+      ],
+      "definitions": {
+        "identity": {
+          "anyOf": [
+            {
+              "$ref": "#/definitions/user/definitions/id"
+            }
+          ]
+        },
+        "id": {
+          "description": "ユーザーID",
+          "type": [
+            "integer"
+          ],
+          "example": 31
+        },
+        "name": {
+          "description": "ユーザー名",
+          "type": [
+            "string"
+          ],
+          "example": "hirose31"
+        }
+      },
+      "properties": {
+        "id": {
+          "$ref": "#/definitions/user/definitions/id"
+        },
+        "name": {
+          "$ref": "#/definitions/user/definitions/name"
+        }
+      },
+      "links": [
+        {
+          "method": "GET",
+          "href": "/users/{(%23%2Fdefinitions%2Fuser%2Fdefinitions%2Fname)}",
+          "rel": "instance",
+          "title": "Info",
+          "description": "ユーザーの情報を返す",
+          "targetSchema": {
+            "$ref": "#/definitions/user"
+          }
+        },
+        {
+          "method": "POST",
+          "href": "/users",
+          "rel": "create",
+          "title": "Register",
+          "description": "ユーザーを登録する",
+          "schema": {
+            "type": [
+              "object"
+            ],
+            "properties": {
+              "name": {
+                "$ref": "#/definitions/user/definitions/name"
+              }
+            }
+          },
+          "required": [
+            "name"
+          ],
+          "targetSchema": {
+            "$ref": "#/definitions/user"
+          }
+        },
+        {
+          "method": "PUT",
+          "href": "/users/{(%23%2Fdefinitions%2Fuser%2Fdefinitions%2Fname)}",
+          "rel": "update",
+          "title": "Update",
+          "description": "ユーザーの情報を変更する",
+          "schema": {
+            "type": [
+              "object"
+            ],
+            "properties": {
+              "name": {
+                "$ref": "#/definitions/user/definitions/name"
+              }
+            }
+          },
+          "targetSchema": {
+            "$ref": "#/definitions/user"
+          }
+        },
+        {
+          "method": "DELETE",
+          "href": "/users/{(%23%2Fdefinitions%2Fuser%2Fdefinitions%2Fname)}",
+          "rel": "destriy",
+          "title": "Info",
+          "description": "ユーザーを削除する",
+          "targetSchema": {
+            "$ref": "#/definitions/user"
+          }
+        }
+      ]
+    }
+  },
+  "properties": {
+    "user": {
+      "$ref": "#/definitions/user"
+    }
+  },
+  "id": "meta",
+  "title": "<% $dist %> API",
+  "description": "<% $dist %> API",
+  "links": [
+    {
+      "href": "https://fixme.example.com/v1",
+      "rel": "self"
+    },
+    {
+      "method": "GET",
+      "href": "/",
+      "rel": "self"
+    }
+  ]
+}
+...
+
+    $self->write_file('schema/schemata/user.yml', <<'...', $tmpl_val);
+---
+"$schema": http://json-schema.org/draft-04/hyper-schema
+id: schemata/user
+title: User
+description: ユーザー操作
+stability: prototype
+strictProperties: true
+type:
+- object
+
+definitions:
+  identity:
+    anyOf:
+    - "$ref": "/schemata/user#/definitions/id"
+  id:
+    description: ユーザーID
+    type: integer
+    example: 31
+  name:
+    description: ユーザー名
+    type: string
+    example: hirose31
+
+properties:
+  id:
+    "$ref": "/schemata/user#/definitions/id"
+  name:
+    "$ref": "/schemata/user#/definitions/name"
+
+links:
+- method: GET
+  href: "/users/{(%2Fschemata%2Fuser%23%2Fdefinitions%2Fname)}"
+  rel: instance
+  title: Info
+  description: ユーザーの情報を返す
+  targetSchema:
+    "$ref": "/schemata/user"
+- method: POST
+  href: "/users"
+  rel: create
+  title: Register
+  description: ユーザーを登録する
+  schema:
+    type: object
+    properties:
+      name:
+        "$ref": "/schemata/user#/definitions/name"
+  required:
+  - "name"
+  targetSchema:
+    "$ref": "/schemata/user"
+- method: PUT
+  href: "/users/{(%2Fschemata%2Fuser%23%2Fdefinitions%2Fname)}"
+  rel: update
+  title: Update
+  description: ユーザーの情報を変更する
+  schema:
+    type: object
+    properties:
+      name:
+        "$ref": "/schemata/user#/definitions/name"
+  targetSchema:
+    "$ref": "/schemata/user"
+- method: DELETE
+  href: "/users/{(%2Fschemata%2Fuser%23%2Fdefinitions%2Fname)}"
+  rel: destriy
+  title: Info
+  description: ユーザーを削除する
+  targetSchema:
+    "$ref": "/schemata/user"
+...
+
+    $self->write_file('script/<<DISTLC>>-api-server', <<'...', $tmpl_val);
+#!perl
 
 use strict;
 use warnings;
 use 5.010_000;
 use utf8;
 
-use Carp;
+use File::Spec;
+use File::Basename;
+use lib File::Spec->catdir(dirname(__FILE__), '../lib');
+use Plack::Builder;
+use Plack::Builder::Conditionals;
+use URI::Escape;
+use File::Path ();
 use Log::Minimal;
-use JSON 2 qw(encode_json decode_json);
-use Try::Tiny;
-use HTTP::Status;
-
-use Amon2::Web::Dispatcher::RouterBoom;
 
 use <% $module %>;
-use <% $module %>::Util;
+use <% $module %>::API;
 
-any '/' => sub {
-    my ($c) = @_;
-    my $counter = $c->session->get('counter') || 0;
-    $counter++;
-    $c->session->set('counter' => $counter);
-    return $c->render('index.tx', {
-        counter => $counter,
-    });
+# time is not required, because I use multilog
+# print pid for debugging
+$Log::Minimal::PRINT = sub {
+    my ( $time, $type, $message, $trace ) = @_;
+    print STDERR "[$$] [$type] $message at $trace\n";
 };
 
-{
-    no warnings 'redefine';
-    package
-        HTTP::Status;
-    *status_message_orig = \&status_message;
-    *status_message = sub ($) {
-        +{
-            599 => 'Under Maintenance',
-        }->{$_[0]} || status_message_orig($_[0]);
+infof "Starting <% $module %> %s", $<% $module %>::VERSION;
+
+my $app = builder {
+    enable match_if addr(['10.33.4.0/22', '127.0.0.1']),
+        'ReverseProxy';
+    enable 'Plack::Middleware::Static',
+        path => qr{^(?:/static/)},
+        root => File::Spec->catdir(dirname(__FILE__), '..');
+    enable 'Plack::Middleware::Static',
+        path => qr{^(?:/robots\.txt|/favicon\.ico)$},
+        root => File::Spec->catdir(dirname(__FILE__), '..', 'static');
+
+    <% $module %>::API->to_app();
+};
+unless (caller) {
+    my $port        = 5000;
+    my $host        = '127.0.0.1';
+    my $max_workers = 4;
+
+    require Getopt::Long;
+    require Plack::Loader;
+    my $p = Getopt::Long::Parser->new(
+        config => [qw(posix_default no_ignore_case auto_help)]
+    );
+    $p->getoptions(
+        'p|port=i'      => \$port,
+        'host=s'        => \$host,
+        'max-workers=i' => \$max_workers,
+        'version!'      => \my $version,
+        'c|config=s'    => \my $config_file,
+    );
+    if ($version) {
+        print "<% $module %>: $<% $module %>::VERSION\n";
+        exit 0;
     }
+    if ($config_file) {
+        my $config = do $config_file;
+        Carp::croak("$config_file: $@") if $@;
+        Carp::croak("$config_file: $!") unless defined $config;
+        unless ( ref($config) eq 'HASH' ) {
+            Carp::croak("$config_file does not return HashRef.");
+        }
+        no warnings 'redefine';
+        no warnings 'once';
+        *<% $module %>::load_config = sub { $config }
+    }
+
+    print "<% $module %>: http://${host}:${port}/\n";
+
+    my $loader = Plack::Loader->load('Starlet',
+        port        => $port,
+        host        => $host,
+        max_workers => $max_workers,
+    );
+    return $loader->run($app);
 }
+return $app;
+...
 
-get '/_chk' => sub {
-    my $c = shift;
+    $self->write_file('service/<<DISTLC>>-api/env/.gitkeep', <<'...', $tmpl_val);
+...
 
-    my($status, $body);
+    $self->write_file('service/<<DISTLC>>-api/log/run', <<'...', $tmpl_val);
+#!/bin/sh
+logdir=./main
+loguser=infra
 
-    if ($c->config->{maintenance_file} && -e $c->config->{maintenance_file}) {
-        $status = 599;
-        $body   = 'MAINTAIN';
-    } else {
-        $status = 200;
-        $body   = 'OK';
-    }
+if [ ! -d "$logdir" ] ; then
+  install -d -o ${loguser} -m 2775 ${logdir} || exit 1
+fi
 
-    return $c->create_response(
-        $status,
-        [
-            'Content-Type'   => 'text/plain',
-            'Content-Length' => length($body)
-        ],
-        $body,
-    );
-};
+exec setuidgid ${loguser} multilog s999999 n10 ${logdir}
+...
 
-get '/status' => sub {
-    my $c = shift;
+    $self->write_file('service/<<DISTLC>>-api/run', <<'...', $tmpl_val);
+#!/bin/sh
+exec 2>&1
 
-    my $body = "";
+### common preparation
+run_file=$(readlink -f $0)
+run_dir=${run_file%/*}
 
-    $body .= sprintf "<% $module %>-API/%s\n", $<% $module %>::VERSION;
+export APP_BASE=$(readlink -f $run_dir/../../)
 
-    return $c->create_response(
-        200,
-        [
-            'Content-Type'   => 'text/plain',
-            'Content-Length' => length($body)
-        ],
-        $body,
-    );
-};
+export ENVDIR_INFRA="${run_dir}/env"
 
-############################################################################
+. /etc/infra.conf
+infra_user=${INFRA_HOME##/*/}
+PATH=${INFRA_ROOT}/bin:$PATH
 
-# capability
-get '/v1/capability' => sub {
-    my($c, $args) = @_;
+echo $INFRA_ENV > $ENVDIR_INFRA/PLACK_ENV
+if [[ ! -f "$ENVDIR_INFRA/RUN_MODE" ]]; then
+  case $INFRA_ENV in
+    *prod)
+      echo 'production'  > $ENVDIR_INFRA/RUN_MODE
+      ;;
+    *)
+      echo 'development' > $ENVDIR_INFRA/RUN_MODE
+      ;;
+  esac
+fi
 
-    # <% $module %>::APIのBEFORE_DISPATCHでやった方がいいかなぁ
-    # でも将来的に v1 は 1.0 以上、v2 は 2.0 以上、とか API version に
-    # よって変えたくなるかもだしここでやる。
+# open files
+ulimit -n 32768
 
-    my $require_version = '1.0';
-    my $content = {
-        message => 'OK',
+exec setuidgid $infra_user \
+  sh -c '\
+    export SHELL=/bin/sh; \
+    export HOME=~infra
+    export PERLBREW_ROOT=$HOME/perlbrew; \
+    export PERLBREW_HOME=$HOME/perlbrew; \
+    . $PERLBREW_ROOT/etc/bashrc; \
+    exec \
+      start_server \
+      --port 5010 \
+      --signal-on-term=TERM \
+      --signal-on-hup=USR1 \
+      --interval=10 \
+      -- \
+      envdir $ENVDIR_INFRA \
+      sh -c "exec \
+        carton exec -- \
+        plackup \
+          -s Starlet \
+          -I $APP_BASE \
+          --access-log /dev/null \
+          --max-workers \${STARLET_MAX_WORKERS:-16} \
+          --max-reqs-per-child \${STARLET_MAX_REQS_PER_CHILD:-1024} \
+          --min-reqs-per-child \${STARLET_MIN_REQS_PER_CHILD:-512} \
+          --spawn-interval \${STARLET_SPAWN_INTERVAL:-1} \
+          $APP_BASE/script/<% $distlc %>-api-server \
+"
+'
+...
+
+    $self->write_file('sql/ddl.sql', <<'...', $tmpl_val);
+CREATE TABLE IF NOT EXISTS users (
+    id           INTEGER NOT NULL PRIMARY KEY AUTO_INCREMENT,
+    name         VARCHAR(255)
+);
+...
+
+    $self->write_file('t/00_compile.t', <<'...', $tmpl_val);
+use strict;
+use warnings;
+use Test::More;
+
+
+use <% $module %>;
+use <% $module %>::API;
+use <% $module %>::API::View;
+use <% $module %>::API::ViewFunctions;
+use <% $module %>::API::Dispatcher;
+
+use <% $module %>::DB::Schema;
+
+
+pass "All modules can load.";
+
+done_testing;
+...
+
+    $self->write_file('t/01_root.t', <<'...', $tmpl_val);
+use strict;
+use warnings;
+use utf8;
+use t::Util;
+use Plack::Test;
+use Plack::Util;
+use Test::More;
+
+my $app = Plack::Util::load_psgi 'script/<% $distlc %>-api-server';
+test_psgi
+    app => $app,
+    client => sub {
+        my $cb = shift;
+        my $req = HTTP::Request->new(GET => 'http://localhost/');
+        my $res = $cb->($req);
+        is $res->code, 200;
+        diag $res->content if $res->code != 200;
     };
 
-    my $ua = $c->req->user_agent;
-    if ($ua =~ m{\A<% $module %>/([0-9]+\.[0-9]+)\z}) {
-        my $client_version = $1;
-        debugf 'its <% $module %> client v%s', $client_version;
-        if ($client_version < $require_version) {
-            $content->{message} = sprintf 'client version must be %s or later', $require_version;
-        }
-    } else {
-        $content->{message} = 'not looks like 2ndbackup client program';
-    }
-
-    return $c->render_json($content);
-};
-
-get '/v1/user/:user_name' => sub {
-    my($c, $args) = @_;
-
-    my $param = $c->parse_json_qs_request
-        or return $c->show_bad_request(
-            'failed to parse JSON' => [
-                {
-                    code => 'invalid',
-                },
-            ]);
-
-    my $mres = $c->model('User')->info({
-        %$param,
-    });
-
-    return $mres->has_errors
-        ? $c->show_bad_request('validation failed', $mres->errors)
-        : $c->render_json($mres->content);
-};
-
-1;
+done_testing;
 ...
 
-    $self->write_file('lib/<<PATH>>/API/View.pm', <<'...');
-package <% $module %>::API::View;
+    $self->write_file('t/02_mech.t', <<'...', $tmpl_val);
 use strict;
 use warnings;
 use utf8;
-use Carp ();
-use File::Spec ();
+use t::Util;
+use Plack::Test;
+use Plack::Util;
+use Test::More;
+use Test::Requires 'Test::WWW::Mechanize::PSGI';
 
-use File::ShareDir;
-use Text::Xslate 1.6001;
-use <% $module %>::API::ViewFunctions;
+my $app = Plack::Util::load_psgi 'script/<% $distlc %>-api-server';
 
-# setup view class
-sub make_instance {
-    my ($class, $context) = @_;
-    Carp::croak("Usage: <% $module %>::API::View->make_instance(\$context_class)") if @_!=2;
+my $mech = Test::WWW::Mechanize::PSGI->new(app => $app);
+$mech->get_ok('/');
 
-    my $view_conf = $context->config->{'Text::Xslate'} || +{};
-    unless (exists $view_conf->{path}) {
-        my $tmpl_path = File::Spec->catdir($context->base_dir(), 'tmpl');
-        if ( -d $tmpl_path ) {
-            # tmpl
-            $view_conf->{path} = [ $tmpl_path ];
-        } else {
-            my $share_tmpl_path = eval { File::Spec->catdir(File::ShareDir::dist_dir('<% $dist %>'), 'tmpl') };
-            if ($share_tmpl_path) {
-                # This application was installed to system.
-                $view_conf->{path} = [ $share_tmpl_path ];
-            } else {
-                Carp::croak("Can't find template directory. tmpl Is not available.");
-            }
-        }
+done_testing;
+...
+
+    $self->write_file('t/Util.pm', <<'...', $tmpl_val);
+package t::Util;
+BEGIN {
+    unless ($ENV{PLACK_ENV}) {
+        $ENV{PLACK_ENV} = 'test';
     }
-    my $view = Text::Xslate->new(+{
-        'syntax'   => 'Kolon',
-        'module'   => [
-            'Text::Xslate::Bridge::Star',
-            '<% $module %>::API::ViewFunctions',
-        ],
-        'function' => {
-        },
-        ($context->debug_mode ? ( warn_handler => sub {
-            Text::Xslate->print( # print method escape html automatically
-                '[[', @_, ']]',
-            );
-        } ) : () ),
-        %$view_conf
-    });
-    return $view;
+    if ($ENV{PLACK_ENV} eq 'production') {
+        die "Do not run a test script on deployment environment";
+    }
 }
-
-1;
-...
-
-    $self->write_file('lib/<<PATH>>/API/ViewFunctions.pm', <<'...');
-package <% $module %>::API::ViewFunctions;
-use strict;
-use warnings;
-use utf8;
-use parent qw(Exporter);
-use Module::Functions;
 use File::Spec;
+use File::Basename;
+use lib File::Spec->rel2abs(File::Spec->catdir(dirname(__FILE__), '..', 'lib'));
+use parent qw/Exporter/;
+use Test::More 0.98;
 
-our @EXPORT = get_public_functions();
-
-sub commify {
-    local $_  = shift;
-    1 while s/((?:\A|[^.0-9])[-+]?\d+)(\d{3})/$1,$2/s;
-    return $_;
-}
-
-sub c { <% $module %>->context() }
-sub uri_with { <% $module %>->context()->req->uri_with(@_) }
-sub uri_for { <% $module %>->context()->uri_for(@_) }
-
-{
-    my %static_file_cache;
-    sub static_file {
-        my $fname = shift;
-        my $c = <% $module %>->context;
-        if (not exists $static_file_cache{$fname}) {
-            my $fullpath = File::Spec->catfile($c->base_dir(), $fname);
-            $static_file_cache{$fname} = (stat $fullpath)[9];
-        }
-        return $c->uri_for(
-            $fname, {
-                't' => $static_file_cache{$fname} || 0
-            }
-        );
-    }
-}
-
-1;
-...
-
-    $self->write_file('lib/<<PATH>>/Model/User.pm', <<'...');
-package <% $module %>::Model::Usages;
-
-use strict;
-use warnings;
-use 5.010_000;
-use utf8;
-
-use Log::Minimal;
-use Try::Tiny;
-
-use <% $module %>::ModelResponse;
-use <% $module %>::ModelTypeConstraints;
-use <% $module %>::Util;
-
-use Class::Accessor::Lite (
-    new => 0,
-    ro  => [qw(c)]
+our @EXPORT = qw(
+    slurp
+    validate_ipaddress
 );
 
-sub new {
-    my($class, %args) = @_;
-    return bless \%args, $class;
-}
-
-sub search {
-    my($self, $param) = @_;
-
-    my $mres = <% $module %>::ModelResponse->new;
-
-    my $rule = $self->c->validator(
-        q => { isa => 'QueryConditions' },
-    )->with('NoThrow');
-
-    $param = $rule->validate(%$param);
-
-    if ($rule->has_errors) {
-        $mres->add_validator_errors($rule->clear_errors);
-        return $mres;
-    }
-
-    my $conds = $param->{q};
-
-    my $rule_q = $self->c->validator(
-        id   => { isa => 'Int|ArrayRef[Int]', optional => 1 },
-        name => { isa => 'Str|ArrayRef[Str]', optional => 1 },
-    )->with('NoThrow','NoRestricted');
-    for my $cond (@$conds) {
-        $cond = $rule_q->validate(%$cond);
-        if ($rule_q->has_errors) {
-            $mres->add_validator_errors($rule_q->clear_errors);
-        }
-    }
-
-    if ($mres->has_errors) {
-        return $mres;
-    }
-
-    my @result;
-    $conds = [{}] unless @$conds; # select all data
-    for my $cond (@$conds) {
-        my $iter = try {
-            $self->c->db->search('users', $cond);
-        } catch {
-            $mres->add_error({
-                field   => 'users',
-                code    => 'missing',
-                message => 'failed to search users: '.$_,
-            });
-            return;
-        };
-        unless ($iter) {
-            return $mres;
-        }
-
-        $iter->suppress_object_creation(1);
-        while (my $user = $iter->next) {
-            push @result, $user;
-        }
-    }
-
-    $mres->content(\@result);
-
-    return $mres;
-}
-
-sub fetch {
-    my($self, $param) = @_;
-
-    my $mres = <% $module %>::ModelResponse->new;
-
-    my $rule = $self->c->validator(
-        name => { isa => 'Str|ArrayRef[Str]' },
-    )->with('NoThrow');
-
-    $param = $rule->validate(%$param);
-
-    if ($rule->has_errors) {
-        $mres->add_validator_errors($rule->clear_errors);
-        return $mres;
-    }
-
-    $mres = $self->search({ q => [{ name => $param->{name_id} }] });
-
-    return $mres;
-}
-
-sub insert {
-    my($self, $param) = @_;
-
-    my $mres = <% $module %>::ModelResponse->new;
-
-    my $rule = $self->c->validator(
-        name => { isa => 'Str' },
-    )->with('NoThrow','NoRestricted');
-
-    $param = $rule->validate(%$param);
-
-    if ($rule->has_errors) {
-        $mres->add_validator_errors($rule->clear_errors);
-        return $mres;
-    }
-
-    # idempotence
-    $mres = $self->search({ q => [$param] });
-    if ($mres->has_errors) {
-        $mres->add_error({
-            message => "failed to get user info",
-            field   => 'users',
-            code    => 'invalid',
-        });
-        return $mres;
-    }
-    if (scalar(@{ $mres->content }) > 0) {
-        debugf("user %s already exists", $mres->content->[0]{name});
-        $mres->content($mres->content->[0]);
-        return $mres;
-    }
-
-    my $id = try {
-        $self->c->db->fast_insert('users', $param)
-    } catch {
-        $mres->add_error({
-            field   => 'users',
-            code    => 'missing',
-            message => 'failed to insert usages: '.$_,
-        });
-        return;
+{
+    # utf8 hack.
+    binmode Test::More->builder->$_, ":utf8" for qw/output failure_output todo_output/;
+    no warnings 'redefine';
+    my $code = \&Test::Builder::child;
+    *Test::Builder::child = sub {
+        my $builder = $code->(@_);
+        binmode $builder->output,         ":utf8";
+        binmode $builder->failure_output, ":utf8";
+        binmode $builder->todo_output,    ":utf8";
+        return $builder;
     };
-    unless ($id) {
-        return $mres;
-    }
-
-    $mres = $self->fetch({name => $param->{name}});
-    unless ($mres->has_errors) {
-        $mres->content( $mres->content->[0] );
-    }
-
-    return $mres;
 }
 
-sub delete {
-    my($self, $param) = @_;
 
-    my $mres = <% $module %>::ModelResponse->new;
+sub slurp {
+    my $fname = shift;
+    open my $fh, '<:encoding(UTF-8)', $fname or die "$fname: $!";
+    scalar do { local $/; <$fh> };
+}
 
-    my $rule = $self->c->validator(
-        usage_id => { isa => 'Int|ArrayRef[Int]' },
-    )->with('NoThrow');
-
-    $param = $rule->validate(%$param);
-
-    if ($rule->has_errors) {
-        $mres->add_validator_errors($rule->clear_errors);
-        return $mres;
-    }
-
-    my $count = $self->c->db->delete('usages', $param);
-
-    $mres->content($count);
-
-    return $mres;
+sub validate_ipaddress {
+    my $addr = shift;
+    my $o1 = qr/2(?:5[0-5]|[0-4][0-9])|1[0-9]{2}|[1-9][0-9]|[1-9]/;
+    my $o  = qr/2(?:5[0-5]|[0-4][0-9])|1[0-9]{2}|[1-9][0-9]|[0-9]/;
+    $addr =~ /\A$o1\.$o\.$o\.$o\z/;
 }
 
 1;
-
-__END__
-
-# for Emacsen
-# Local Variables:
-# mode: cperl
-# cperl-indent-level: 4
-# cperl-close-paren-offset: -4
-# cperl-indent-parens-as-block: t
-# indent-tabs-mode: nil
-# coding: utf-8
-# End:
-
-# vi: set ts=4 sw=4 sts=0 et ft=perl fenc=utf-8 ff=unix :
-
 ...
 
+    $self->write_file('t/harriet/mysqld.pl', <<'...', $tmpl_val);
+use strict;
+use warnings;
+use utf8;
 
+use FindBin;
+use lib "$FindBin::Bin/../..";
 
-    {
-        my $path = $self->render_string('lib/<% $path %>/Web/Plugin/');
-        system("rm -fr $path");
+use DBI;
+use DBIx::FixtureLoader;
+use Path::Class;
+use Cwd;
+
+use t::Util;
+
+$ENV{TEST_MYSQL} ||= do {
+    require Test::mysqld;
+
+    my $cwd = Cwd::getcwd;
+
+    my $copy_data_from = dir($ENV{TEST_MYSQL_COPY_DATA_FROM} // $cwd.'/tmp/test_mysql_copy_data_from');
+
+    if (require_create_fixture($copy_data_from)) {
+        create_fixture(
+            cwd     => $cwd,
+            datadir => $copy_data_from,
+        );
     }
 
+    my $mysqld = start_mysqld(
+        copy_data_from => $copy_data_from,
+    );
 
+    $HARRIET_GUARDS::MYSQLD = $mysqld;
+    $mysqld->dsn;
+};
+
+sub require_create_fixture {
+    my($datadir) = @_;
+    return -f $datadir->file('initialized') ? 0 : 1;
+}
+
+sub start_mysqld {
+    my %args = @_;
+
+    my $mysqld = Test::mysqld->new(
+        my_cnf => {
+            'skip-networking'        => '', # no TCP socket
+            'performance_schema'     => 'off',
+            'skip-secure-auth'       => '',
+            'innodb_file_per_table'  => 1,
+            'default-storage-engine' => 'InnoDB',
+            'transaction-isolation'  => 'REPEATABLE-READ',
+            # 'skip-character-set-client-handshake' => '',
+            'character-set-server'   => 'utf8',
+            ($args{datadir} ? (datadir => $args{datadir}) : ()),
+        },
+        ($args{copy_data_from} ? (copy_data_from => $args{copy_data_from}) : ()),
+    ) or die $Test::mysqld::errstr;
+
+    return $mysqld;
+}
+
+sub create_fixture {
+    my %args = @_;
+    my $datadir = $args{datadir};
+    my $cwd     = $args{cwd};
+
+    warn "create fixture\n";
+
+    $datadir->rmtree(1);
+    $datadir->mkpath(1, oct(2775)) or die $!;
+
+    my $mysqld = start_mysqld(
+        datadir => $datadir,
+    );
+
+    my $dbh = DBI->connect($mysqld->dsn) or die $DBI::errstr;
+
+    warn "create schemata\n";
+    my $ddl = slurp('sql/ddl.sql');
+    for my $stmt (split /;/, $ddl) {
+        next unless $stmt =~ /\S/;
+        $dbh->do($stmt) or die $dbh->errstr;
+    }
+
+    $dbh->do('SET NAMES utf8');
+    my $loader = DBIx::FixtureLoader->new(dbh => $dbh);
+    for my $data (glob "$cwd/data/*.yaml") {
+        warn "load data from $data\n";
+        $loader->load_fixture($data);
+    }
+
+    undef $mysqld;
+
+    $datadir->file('initialized')->touch;
+}
+...
+
+    $self->write_file('t/http/users.t', <<'...', $tmpl_val);
+use strict;
+use warnings;
+use utf8;
+use Test::More;
+
+use Plack::Test;
+use Plack::Util;
+use HTTP::Request::Common qw(GET POST DELETE PUT);
+use JSON qw(encode_json decode_json);
+
+use <% $module %>::Util;
+
+my $app  = Plack::Util::load_psgi 'script/<% $distlc %>-api-server';
+my $test = Plack::Test->create($app);
+
+my $user_id;
+
+subtest 'insert' => sub {
+    my($res, $resource);
+
+    $res = $test->request(POST '/v1/users',
+                          'Content-Type' => 'application/json',
+                          'Content' => encode_json({
+                              name => 'hirose31',
+                          }),
+                      );
+    ok $res->is_success, 'create user';
+    $resource = decode_json($res->content);
+    $user_id = $resource->{id};
+    ok $user_id =~ /^[0-9]+$/;
+    is $resource->{name}, 'hirose31';
+
+    # idempotence
+    $res = $test->request(POST '/v1/users',
+                          'Content-Type' => 'application/json',
+                          'Content' => encode_json({
+                              name => 'hirose31',
+                          }),
+                      );
+    ok $res->is_success, 'create user idempotence';
+    $resource = decode_json($res->content);
+    is $resource->{id}, $user_id;
+};
+
+subtest 'fetch' => sub {
+    my($res, $resource);
+
+    ### success
+    $res = $test->request(GET "/v1/users/hirose31");
+    ok $res->is_success, 'fetch user';
+    $resource = decode_json($res->content);
+    is $resource->{id}, $user_id;
+    is $resource->{name}, 'hirose31';
+};
+
+subtest 'search' => sub {
+    my($res, $resource);
+
+    $res = $test->request(GET '/v1/search/users',
+                          'Content-Type' => 'application/json',
+                          'Content' => encode_json({
+                              q => [{
+                                  name => 'hirose31',
+                              }],
+                          }),
+                      );
+    ok $res->is_success, 'search user';
+    $resource = decode_json($res->content);
+    is scalar(@$resource), 1;
+    ok $resource->[0]{id} =~ /^[0-9]+$/;
+    is $resource->[0]{name}, 'hirose31';
+};
+
+subtest 'insert' => sub {
+    my($res, $resource);
+
+    $res = $test->request(PUT '/v1/users/hirose31',
+                          'Content-Type' => 'application/json',
+                          'Content' => encode_json({
+                              name => 'hirose32',
+                          }),
+                      );
+    ok $res->is_success, 'update user';
+    $resource = decode_json($res->content);
+    is $resource->{name}, 'hirose32';
+};
+
+subtest 'insert' => sub {
+    my($res, $resource);
+
+    $res = $test->request(DELETE '/v1/users/hirose32');
+    ok $res->is_success, 'delete user';
+    is $res->code, 204;
+};
+
+done_testing;
+...
+
+    $self->write_file('t/model/user.t', <<'...', $tmpl_val);
+use strict;
+use warnings;
+use utf8;
+use Test::More;
+
+use FindBin;
+use lib "$FindBin::Bin/../..";
+
+use t::Util;
+use <% $module %>::API;
+use <% $module %>::Util;
+
+my $c = <% $module %>::API->bootstrap();
+
+subtest 'insert' => sub {
+    my($mres, $resource);
+
+    ### success
+    $mres = $c->model('User')->insert({
+        name => 'hirose31',
+    });
+    ok !$mres->has_errors;
+    $resource = $mres->content;
+    ok $resource->{id} =~ /^[0-9]+$/;
+    is $resource->{name}, 'hirose31';
+
+    ### fail
+    $mres = $c->model('User')->insert();
+    ok $mres->has_errors, 'no param';
+
+    $mres = $c->model('User')->insert({
+    });
+    ok $mres->has_errors, 'no required param';
+};
+
+subtest 'fetch' => sub {
+    my($mres, $resource);
+
+    ### success
+    $mres = $c->model('User')->fetch({
+        name => 'hirose31',
+    });
+    ok !$mres->has_errors;
+    $resource = $mres->content;
+    is scalar(@$resource), 1;
+    is $resource->[0]{name}, 'hirose31';
+
+    $mres = $c->model('User')->fetch({
+        name => 'blah blah blah',
+    });
+    ok !$mres->has_errors, 'not found';
+    $resource = $mres->content;
+    is scalar(@$resource), 0;
+
+    ### fail
+    $mres = $c->model('User')->fetch();
+    ok $mres->has_errors, 'no param';
+
+    $mres = $c->model('User')->fetch({
+    });
+    ok $mres->has_errors, 'no required param';
+};
+
+subtest 'search' => sub {
+    my($mres, $resource);
+
+    ### success
+    $mres = $c->model('User')->search({
+        q => [{
+            name => 'hirose31',
+        }],
+    });
+    ok !$mres->has_errors;
+    $resource = $mres->content;
+    is scalar(@$resource), 1;
+    is $resource->[0]{name}, 'hirose31';
+
+    $mres = $c->model('User')->search({
+        q => [{
+            name => ['hirose31'],
+        }],
+    });
+    ok !$mres->has_errors, 'search by ArrayRef';
+    $resource = $mres->content;
+    is scalar(@$resource), 1;
+    is $resource->[0]{name}, 'hirose31';
+
+    $mres = $c->model('User')->search({
+        q => [{
+            name => 'blah blah blah',
+        }],
+    });
+    ok !$mres->has_errors, 'not found';
+    $resource = $mres->content;
+    is scalar(@$resource), 0;
+
+    ### fail
+    $mres = $c->model('User')->search();
+    ok $mres->has_errors, 'no param';
+
+    $mres = $c->model('User')->search({
+    });
+    ok $mres->has_errors, 'no required param';
+};
+
+subtest 'update' => sub {
+    my($mres, $resource);
+
+    ### success
+    $mres = $c->model('User')->update({
+        key => 'hirose31',
+        name => 'hirose32',
+    });
+    ok !$mres->has_errors;
+    $resource = $mres->content;
+    is $resource->{name}, 'hirose32';
+
+    ### fail
+    $mres = $c->model('User')->update();
+    ok $mres->has_errors, 'no param';
+
+    $mres = $c->model('User')->update({
+    });
+    ok $mres->has_errors, 'no required param';
+};
+
+subtest 'delete' => sub {
+    my($mres, $resource);
+
+    ### success
+    $mres = $c->model('User')->delete({
+        name => 'hirose32',
+    });
+    ok !$mres->has_errors;
+    $resource = $mres->content;
+
+    $mres = $c->model('User')->fetch({
+        name => 'hirose32',
+    });
+    ok !$mres->has_errors;
+    $resource = $mres->content;
+    is_deeply $resource, [];
+
+    ### fail
+    $mres = $c->model('User')->delete();
+    ok $mres->has_errors, 'no param';
+
+    $mres = $c->model('User')->delete({
+    });
+    ok $mres->has_errors, 'no required param';
+};
+
+
+done_testing;
+...
+
+    $self->write_file('junk/myprove', <<'...', $tmpl_val);
+#!/bin/bash
+
+set -u
+set -e
+export LANG="C"
+
+prog=${0##*/}
+basedir=${0%/*}
+
+env \
+  RUN_MODE=${RUN_MODE:-development} \
+  carton exec -- \
+  prove "$@"
+...
+    chmod 0755, 'junk/myprove';
+
+    $self->write_file('junk/mysock', <<'...', $tmpl_val);
+#!/bin/bash
+#
+# export TEST_MYSQL='DBI:mysql:dbname=test;mysql_socket=/tmp/m1L8iR3XSD/tmp/mysql.sock;user=root'
+# に基づいて sock で接続する
+
+if [[ -z "$TEST_MYSQL" ]]; then
+  echo "TEST_MYSQL not defined"
+  exit 1
+fi
+
+eval "$(echo $TEST_MYSQL | tr ':;' '_ ')"
+if [[ -z "$mysql_socket" ]]; then
+  echo "missing mysql_socket: $TEST_MYSQL"
+  exit 1
+fi
+
+if [[ ! -S "$mysql_socket" ]]; then
+  echo "$mysql_socket is not socket"
+  exit 1
+fi
+
+exec mysql -uroot -S $mysql_socket -D test "$@"
+...
+    chmod 0755, 'junk/mysock';
+
+    $self->write_file('junk/start-api', <<'...', $tmpl_val);
+#!/bin/bash
+
+set -u
+set -e
+export LANG="C"
+
+prog=${0##*/}
+basedir=${0%/*}
+
+env PLACK_ENV=development \
+    RUN_MODE=development \
+    LM_DEBUG=1 \
+    carton exec -- \
+    plackup -s Starlet -Ilib -I/home/hirose31/lib/plcmp/gi/ -R $basedir/../lib --access-log /dev/stdout -p 5010 $basedir/../script/<% $distlc %>-api-server  --host 0.0.0.0 \
+    ;
+...
+    chmod 0755, 'junk/start-api';
+
+    ### fix permission
+    {
+        for my $file (
+          glob('service/*/run'),
+          glob('service/*/log/run'),
+        ) {
+          chmod 0755, $file
+        }
+    }
+    ### unlink
+    {
+        my @paths = (
+            'lib/<% $path %>/Web/Plugin/',
+            'sql/sqlite.sql',
+            'sql/mysql.sql',
+            't/03_assets.t',
+            't/06_jshint.t',
+        );
+
+        for my $path (@paths) {
+            $path = $self->render_string($path);
+            system("rm -fr $path");
+        }
+
+    }
 }
 
 1;
@@ -1660,7 +3327,7 @@ To install this module, run the following commands:
 
 =head1 SYNOPSIS
 
-    amon2-setup --flavor Basic,JSONAPI MyAPI
+    amon2-setup --flavor JSONAPI MyAPI
 
 =head1 DESCRIPTION
 
