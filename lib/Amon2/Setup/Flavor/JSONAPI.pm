@@ -4,6 +4,7 @@ use utf8;
 
 package Amon2::Setup::Flavor::JSONAPI;
 use parent qw(Amon2::Setup::Flavor::Basic);
+our $VERSION = '1.001';
 
 =pod
 

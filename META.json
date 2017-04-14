@@ -57,7 +57,7 @@
    "provides" : {
       "Amon2::Setup::Flavor::JSONAPI" : {
          "file" : "lib/Amon2/Setup/Flavor/JSONAPI.pm",
-         "version" : "v1.0.0"
+         "version" : "1.001"
       }
    },
    "release_status" : "stable",
@@ -72,7 +72,7 @@
          "web" : "https://github.com/hirose31/Amon2-Setup-Flavor-JSONAPI"
       }
    },
-   "version" : "v1.0.0",
+   "version" : "1.001",
    "x_serialization_backend" : "JSON::XS version 3.02"
 }
 
