@@ -714,6 +714,18 @@ sub parse_json_request {
     return $param || ();
 }
 
+sub show_mres_error {
+    my($c, $mres) = @_;
+
+    my $message = $mres->content // 'internal server error';
+
+    if ($message eq 'validation failed') {
+        return $c->show_bad_request($message, $mres->errors);
+    } else {
+        return $c->show_internal_server_error($message, $mres->errors);
+    }
+}
+
 sub show_internal_server_error {
     my($c, $message, $errors) = @_;
     return $c->show_error(500, $message, $errors);
@@ -736,13 +748,17 @@ sub show_not_found {
 
 sub show_error {
     my($c, $code, $message, $errors) = @_;
-    if ($message eq 'validation failed') {
-        warnf '%s %s', $message, ddf($errors);
-    } else {
+
+    $code //= 500;
+
+    if ($code =~ /^5/) {
         critf '%s %s', $message, ddf($errors);
+    } else {
+        warnf '%s %s', $message, ddf($errors);
     }
+
     my $res = $c->render_json({message => $message, errors => $errors // []});
-    $res->code($code // 500);
+    $res->code($code);
     return $res;
 }
 
@@ -1077,7 +1093,7 @@ get '/v1/search/users' => sub {
     my $mres = $c->model('User')->search($param);
 
     return $mres->has_errors
-        ? $c->show_bad_request('validation failed', $mres->errors)
+        ? $c->show_mres_error($mres)
         : $c->render_json($mres->content);
 };
 
@@ -1094,7 +1110,7 @@ get '/v1/users/:user_name' => sub {
     });
 
     return $mres->has_errors
-        ? $c->show_bad_request('validation failed', $mres->errors)
+        ? $c->show_mres_error($mres)
         : scalar(@{ $mres->content }) != 1
           ? $c->show_internal_server_error('got several results')
           : $c->render_json($mres->content->[0]);
@@ -1111,7 +1127,7 @@ post '/v1/users' => sub {
     my $mres = $c->model('User')->insert($param);
 
     return $mres->has_errors
-        ? $c->show_bad_request('validation failed', $mres->errors)
+        ? $c->show_mres_error($mres)
         : $c->render_json($mres->content, 201);
 };
 
@@ -1129,7 +1145,7 @@ put '/v1/users/:user_name' => sub {
     });
 
     return $mres->has_errors
-        ? $c->show_bad_request('validation failed', $mres->errors)
+        ? $c->show_mres_error($mres)
         : $c->render_json($mres->content);
 };
 
@@ -1139,7 +1155,7 @@ delete_ '/v1/users/:user_name' => sub {
     my $mres = $c->model('User')->delete({ name => $args->{user_name} });
 
     return $mres->has_errors
-        ? $c->show_bad_request('validation failed', $mres->errors)
+        ? $c->show_mres_error($mres)
         : $mres->content == 0
           ? $c->render_json({}, 404)
           : $c->render_json({}, 204);
@@ -1321,16 +1337,17 @@ sub search {
         return $mres;
     }
 
-    my @result;
+    my @result;
     $conds = [{}] unless @$conds; # select all data
     for my $cond (@$conds) {
         my $iter = try {
             $self->c->db->search('users', $cond);
         } catch {
+            $mres->content('failed to search users');
             $mres->add_error({
                 field   => 'users',
-                code    => 'missing',
-                message => 'failed to search users: '.$_,
+                code    => 'fatail',
+                message => $_,
             });
             return;
         };
@@ -1397,7 +1414,7 @@ sub insert {
         $mres->add_error({
             message => "failed to get user info",
             field   => 'users',
-            code    => 'invalid',
+            code    => 'fatal',
         });
         return $mres;
     }
@@ -1410,10 +1427,11 @@ sub insert {
     my $id = try {
         $self->c->db->fast_insert('users', $param)
     } catch {
+        $mres->content('failed to insert user');
         $mres->add_error({
             field   => 'users',
-            code    => 'missing',
-            message => 'failed to insert user: '.$_,
+            code    => 'fatal',
+            message => $_,
         });
         return;
     };
@@ -1454,6 +1472,7 @@ sub update {
 
     my $row = $self->c->db->single('users', { name => $key_val });
     unless ($row) {
+        $mres->content("no such user: name: $key_val");
         $mres->add_error({
             message => "no such user: name: $key_val",
             field   => 'users',
@@ -1465,10 +1484,11 @@ sub update {
     my $count = try {
         $row->update(\%newval);
     } catch {
+        $mres->content('failed to update user');
         $mres->add_error({
-            message => "failed to update user: ".$_,
+            message => $_,
             field   => 'users',
-            code    => 'invalid',
+            code    => 'fatal',
         });
         return;
     };
@@ -1574,6 +1594,8 @@ sub add_validator_errors {
         UnknownParameter   => 'invalid',
     };
 
+    $self->content('validation failed');
+
     for my $e (@$errors) {
         $self->add_error({
             field   => $e->{name},
@@ -1644,6 +1666,19 @@ B<<% $module %>::ModelResponse> - ...
 なので、例えばTagモデルのidやnameメソッドの返り値には使わない。
 
 別な言い方をすると、コントローラがモデルのエラーの詳細を知りたい局面では ModelResponse を返るが、モデルのユーティリティメソッドには使わない。
+
+=head1 STRUCTURE
+
+    content => Any
+      正常系の場合は任意の型のデータ
+      異常系はエラーメッセージ:Str
+    errors  => ArrayRef[ERROR]
+    
+    ERROR = {
+      field   => エラー起因のパラメータやモデルの名前
+      code    => missing | missing_field | invalid | already_exists | fatal
+      message => Str (optional)
+    }
 
 =cut
 ...
