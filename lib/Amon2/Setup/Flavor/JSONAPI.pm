@@ -100,6 +100,7 @@ sub run {
                         'DBD::mysql'                 => 0,
                         'Daiku'                      => 0,
                         'WWW::Form::UrlEncoded::XS'  => 0,
+                        'Teng::Schema::Declare'      => 0,
                     },
                 },
                 configure => {
