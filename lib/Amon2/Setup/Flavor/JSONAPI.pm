@@ -2762,7 +2762,7 @@ if [ ! -d "$logdir" ] ; then
   install -d -o ${loguser} -m 2775 ${logdir} || exit 1
 fi
 
-exec setuidgid ${loguser} multilog s999999 n10 ${logdir}
+exec setuidgid ${loguser} multilog t s999999 n10 ${logdir}
 ...
 
     $self->write_file('service/<<DISTLC>>-api/run', <<'...', $tmpl_val);
